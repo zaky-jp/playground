@@ -1,5 +1,3 @@
-#!/usr/bin/env zsh
-
 if (( $+commands[alacritty] )); then
   function ssh() {
     local arg=$1
@@ -15,5 +13,3 @@ if (( $+commands[alacritty] )); then
     fi
   }
 fi
-
-# vim: filetype=zsh :

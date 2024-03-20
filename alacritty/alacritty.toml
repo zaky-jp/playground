@@ -1,0 +1,33 @@
+import = [
+  "~/playground/alacritty/config/dracula/dracula.toml", # hardcoding required
+  "~/.config/alacritty/shell.toml", # symbolic link to appropriate shell
+  "~/.config/alacritty/hints.toml", # os-specific command to open links
+]
+
+[env]
+COLORTERM = 'truecolor' # tell other apps truecolor is available
+
+# window appearance
+[window]
+dynamic_title = true
+padding = { x = 6, y = 4 }
+
+# font
+[font]
+normal = {family = "SF Mono Square", style = "Regular"}
+size = 20.0
+builtin_box_drawing = false
+
+# canvas
+[colors]
+draw_bold_text_with_bright_colors = true
+
+[cursor]
+style = {shape = "Beam", blinking = "On"}
+
+[mouse]
+hide_when_typing = true
+
+# behaviour
+[selection]
+save_to_clipboard = true

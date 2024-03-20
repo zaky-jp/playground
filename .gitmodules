@@ -7,3 +7,9 @@
 [submodule "lsp/shell/explainshell"]
 	path = lsp/shell/explainshell/upstream
 	url = https://github.com/idank/explainshell.git
+[submodule "shell/p10k"]
+	path = shell/p10k
+	url = https://github.com/romkatv/powerlevel10k.git
+[submodule "alacritty/config/dracula"]
+	path = alacritty/config/dracula
+	url = https://github.com/dracula/alacritty.git

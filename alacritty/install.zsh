@@ -1,54 +1,105 @@
 #!/usr/bin/env zsh
 set -eu
 
-## 0. source common functions
-## outcome: $PLAYGROUND_DIR/common/zsh-functions/ sourced
-if [[ ! -d "${PLAYGROUND_DIR}" ]]; then
-  echo "\$PLAYGROUND_DIR do not exist. aborting..." 2>&1
-  exit 1
-fi
-source "${PLAYGROUND_DIR}/common/zsh-functions/init"
+# @fail fast
+(( ${+RUNOS} )) || { echo "error: RUNOS is not defined." && exit 2; }
+(( ${+RUNARCH} )) || { echo "error: RUNARCH is not defined." && exit 2; }
+case $RUNOS in
+  macos) 
+    (( ${+commands[brew]} )) || { echo "error: homebrew is not found. aborting..."; exit 1; } ;;
+  *)
+    echo "error: This script does not support $RUNOS."
+    exit 1
+    ;;
+esac
+# @end  
 
-## 1. initialisation
-## outcome: $ALACRITTY_CONFIG set
-ALACRITTY_CONFIG="${ALACRITTY_CONFIG:-${XDG_CONFIG_HOME}/alacritty}"
-log_notice "Installing alacritty..."
+# @define environment variables
+source "${PLAYGROUND_DIR}/alacritty/.env.zsh"
+# @end
 
-## 2. installing alacritty
-## outcome: alacritty installed by appropriate package manager
-local pkg="alacritty"
-if ! test_command "${pkg}"; then
-  case "$RUNOS" in
-    "macos")
-      brew install "${pkg}";;
-    *)
-      log_fatal "Please install ${pkg} manually. aborting...";;
-  esac
-fi
+# @define check functions
+function check_alacritty_installed() {
+  [[ -d "/Applications/Alacritty.app" ]]
+  return $?
+}
 
-## 3. [if macos] installing SF Mono Square font
-## outcome: SF Mono Square font files copied to /Library/Fonts/
-if [[ $RUNOS="macos" && ! -e "/Library/Fonts/SFMonoSquare-Regular.otf" ]]; then
-  log_notice "SFMonoSquare is not yet installed."
-  if [[ -d "$(brew --prefix sfmono-square)/share/fonts" ]]; then
-    log_info "SFMonoSquare is already generated."
-  else
-    brew install delphinus/sfmono-square/sfmono-square
+function check_sfmono_square_installed() {
+  check_file_exist "/Library/Fonts/SFMonoSquare-Regular.otf"
+  return $?
+}
+# @end
+
+# @define install functions
+function install_alacritty_with_brew() {
+  if check_alacritty_installed; then
+    echo "warning: alacritty is already installed."
+    return
   fi
-  log_info "moving fonts to /Library/Fonts"
-  () {
+  echo "info: installing alacritty..."
+  brew install --cask alacritty
+}
+
+function install_sfmono_square() {
+  if check_sfmono_square_installed; then
+    echo "warning: sfmono-square is already installed."
+    return
+  fi
+  echo "info: installing sfmono-square..."
+  brew install delphinus/sfmono-square/sfmono-square
+}
+
+function copy_sfmono_square_fonts() {
+  if check_sfmono_square_installed; then
+    echo "warning: sfmono-square is already installed."
+    return
+  fi
+  echo "info: requesting sudo privilege to copy to /Library/Fonts"
+  (){
     emulate -L zsh -o extended_glob
-    sudo cp -n "$(brew --prefix sfmono-square)"/share/fonts/*.otf /Library/Fonts
+    sudo cp -i "${PLAYGROUND_DIR}/alacritty/SFMonoSquare-Regular.otf" /Library/Fonts
   }
-fi
+}
+# @end
 
-## 4. symlinking configuration file
-## outcome: configuration file symlinked to $ALACRITTY_CONFIG
-safe_symlink "${PLAYGROUND_DIR}/alacritty/configuration.yml" "${ALACRITTY_CONFIG}/alacritty.yml"
+# @define configure functions
+function symlink_alacritty_configuration() {
+  (( ${#alacritty_config} )) || { echo "error: alacritty_config is not defined." && return 2; }
 
-## 5. installing terminfo file
-## outcome: terminfo file saved under /usr/share/terminfo or $TERMINFO
-# this is required as screen/tmux refer terminfo folder, and do not refer to internal terminfo under /Application folder (at least for macos)
-"${PLAYGROUND_DIR}/alacritty/terminfo.sh"
+  for target in ${(k)alacritty_config}; do
+    if check_file_exist "${ALACRITTY_HOME}/$target"; then
+      echo "warning: $target already exists."
+      continue
+    fi
+    echo "debug: creating symlink for ${target}"
+    ln -s "${alacritty_config[$target]}" "${ALACRITTY_HOME}/${target}"
+  done
+}
 
-# vim: se filetype=zsh:
+function rm_old_configuration() {
+  local old_config="${ALACRITTY_HOME}/alacritty.yml"
+
+  if check_file_exist $old_config; then
+    echo "warning: obsolete config detected. removing."
+    rm "${ALACRITTY_HOME}/alacritty.yml"
+  fi
+}
+
+# @run
+echo "info: start installing alacritty..."
+echo "info: installing terminfo..."
+bash "$PLAYGROUND_DIR/alacritty/terminfo.sh"
+case $RUNOS in
+  macos)
+    echo "info: installing alacritty using brew..."
+    install_alacritty_with_brew
+    echo "info: installing fonts..."
+    install_sfmono_square
+    copy_sfmono_square_fonts
+    defaults write org.alacritty AppleFontSmoothing -int 0 # enable font smoothing
+    ;;
+esac
+echo "info: configuring alacritty..."
+rm_old_configuration
+symlink_alacritty_configuration
+# @end

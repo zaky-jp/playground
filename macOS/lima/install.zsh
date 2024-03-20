@@ -1,53 +1,77 @@
 #!/usr/bin/env zsh
 set -eu
-## fail fast
-if [[ "${RUNOS}" != "macos" ]]; then
-  echo "This script is for macOS only. aborting..." 2>&1
+#log_level[debug]=1 # enable debug
+
+# @fail fast
+(( $+commands[brew] )) || {
+  echo "error: brew is not installed"
   exit 1
-fi
+}
+# @end
 
-## 0. source common functions
-## outcome: $PLAYGROUND_DIR/common/zsh-functions/ sourced
-if [[ ! -d "${PLAYGROUND_DIR}" ]]; then
-  echo "\$PLAYGROUND_DIR do not exist. aborting..." 2>&1
-  exit 1
-fi
-source "${PLAYGROUND_DIR}/common/zsh-functions/init"
+# @define environment variables
+local LIMA_CONTAINER_NAME="default"
+# @end
 
-## 1. initialization
-## outcome: $LIMA_HOME set to $HOME/.lima unless already set
-export LIMA_HOME="${LIMA_HOME:-$HOME/.lima}"
-log_notice "Installing lima..."
+# @define check functions
+function check_lima_container_exist() {
+  limactl list --format '{{.Name}}' | grep -q "${LIMA_CONTAINER_NAME}"
+  return $?
+}
 
-## 2. installing lima and socket_vmnet
-## outcome: lima and socket_vmnet installed by appropriate package manager
-if ! test_command limactl; then
+function check_docker_context_exist() {
+  docker context ls --format '{{.Name}}' | grep -q "${LIMA_CONTAINER_NAME}"
+  return $?
+}
+# @end
+
+# @define install functions
+function install_lima() {
+  if (( $+commands[limactl] )); then
+    echo "debug: limactl is already installed"
+    return
+  fi
+  echo "info: installing lima..."
   brew install lima
-fi
-if ! brew list socket_vmnet >/dev/null 2>&1; then
-  brew install socket_vmnet
-fi
+  limactl completion zsh > $(brew --prefix)/share/zsh/site-functions/_limactl
+}
 
-## 3. adding configuration files
-## outcome: sudoers file added to /private/etc/sudoers.d/lima, default.yaml added to $LIMA_HOME/_config
-if [[ ! -d "$(brew --prefix)/opt/socket_vmnet" ]]; then
-  # making sure socket_vmnet is available, otherwise lima will not intelligently create appropriate network config
-  log_fatal "socket_vmnet not installed. aborting..."
-fi
+function install_docker_cli() {
+  if (( $+commands[docker] )); then
+    echo "debug: docker cli is already installed"
+    return
+  fi
+  echo "info: installing docker cli..."
+  brew install docker # not to be confused with brew install --cask docker
+}
+# @end
 
-if [[ -e "${LIMA_HOME}/_config/networks.yaml" ]]; then
-  log_warn "${LIMA_HOME}/_config/networks.yaml already exists."
-  log_info "networks.yaml may need manual adjustments."
-fi
+# @define configure functions
+function create_lima_container() {
+  if check_lima_container_exist; then
+    echo "debug: lima container already exists"
+    return
+  fi
+  limactl create --name="${LIMA_CONTAINER_NAME}" \
+    --cpus=4 --memory=4 \
+    --vm-type=vz --mount-type=virtiofs --network=vzNAT --rosetta \
+    template://docker
+}
 
-limactl sudoers >etc_sudoers.d_lima
-sudo install -o root etc_sudoers.d_lima /etc/sudoers.d/lima
-rm etc_sudoers.d_lima
+function create_docker_context() {
+  if check_docker_context_exist; then
+    echo "debug: docker context already exists"
+    return
+  fi
+  docker context create lima-${LIMA_CONTAINER_NAME} --docker "host=unix://$HOME/.lima/${LIMA_CONTAINER_NAME}/sock/docker.sock"
+  docker context use lima-${LIMA_CONTAINER_NAME}
+}
+# @end
 
-safe_symlink "${PLAYGROUND_DIR}/macOS/lima/default.yaml" "${LIMA_HOME}/_config/default.yaml"
-safe_symlink "${PLAYGROUND_DIR}/macOS/lima/override.yaml" "${LIMA_HOME}/_config/override.yaml"
-
-## 4. start lima instance
-## outcome: lima instance started with "default with some flavour" template
-log_notice "Starting lima instance..."
-limactl sudoers --check && limactl start --name=default --tty=false 
+# @run
+install_lima
+install_docker_cli
+create_lima_container
+limactl start "${LIMA_CONTAINER_NAME}"
+create_docker_context
+# @end
